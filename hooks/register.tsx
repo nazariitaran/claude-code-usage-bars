@@ -117,21 +117,35 @@ async function lastKnownLimits($: EngineInterface): Promise<Limit[]> {
   return Array.isArray(saved) ? (saved as Limit[]) : []
 }
 
+async function hydrate($: EngineInterface) {
+  const usage = await $.session.usage()
+  if (usage.rateLimits.length > 0) {
+    await storeLimits($, usage.rateLimits)
+    await $.store.set(LIMITS_KEY, usage.rateLimits)
+  } else {
+    await storeLimits($, await lastKnownLimits($))
+  }
+  const { tokens, window, percent } = usage.context
+  await update($, context, () => ({ tokens, window, percent }))
+}
+
 let relaySeq = 0
+let isHydrating = false
 
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
     const result = await next(e)
-    const usage = await $.session.usage()
-    if (usage.rateLimits.length > 0) {
-      await storeLimits($, usage.rateLimits)
-      await $.store.set(LIMITS_KEY, usage.rateLimits)
-    } else {
-      await storeLimits($, await lastKnownLimits($))
-    }
-    const { tokens, window, percent } = usage.context
-    await update($, context, () => ({ tokens, window, percent }))
+    await hydrate($)
     return result
+  })
+
+  // A /clear or resume keeps the process but starts the new conversation with
+  // empty state and no session.start; redrawing lets the hint line notice.
+  on('session.end', ($, e, next) => {
+    if (e.reason === 'clear' || e.reason === 'resume') {
+      $.clock.after(100, () => $.ui.invalidate('ui.render'))
+    }
+    return next(e)
   })
 
   on('session.measure', async ($, e, next) => {
@@ -201,6 +215,16 @@ export const register: Register = on => {
       }))
 
     const main = await read($, context)
+    // Context is always set once a conversation is hydrated, so its absence
+    // marks one that started without session.start (/clear, resume).
+    if (main === null && !isHydrating) {
+      isHydrating = true
+      $.clock.after(0, () => {
+        void hydrate($).finally(() => {
+          isHydrating = false
+        })
+      })
+    }
     const agentId = relayed?.agentId ?? null
     let ctx: Cell | null = null
     if (agentId === null) {

@@ -1,4 +1,4 @@
-import { expect, test } from 'claude-code/testing'
+import { expect, mock, test } from 'claude-code/testing'
 
 const HOUR = 3_600_000
 
@@ -27,15 +27,17 @@ function seed(overrides: Record<string, unknown> = {}): Record<string, unknown> 
 }
 
 // An in-memory $.state, with the clock and the engine's own hint line stubbed.
-function engine(on: any, state: Record<string, unknown>) {
+function engine(on: any, state: Record<string, unknown>, { stubClock = true } = {}) {
   let version = 1
   on('state.get', (_: unknown, e: { key: string }) => ({ value: { value: state[e.key], version } }))
   on('state.set', (_: unknown, e: { key: string; value: unknown }) => {
     state[e.key] = e.value
     return { value: { isSet: true, version: ++version } }
   })
-  on('clock.now', () => ({ value: Date.now() }))
-  on('clock.after', () => ({ value: { cancel: () => {} } }))
+  if (stubClock) {
+    on('clock.now', () => ({ value: Date.now() }))
+    on('clock.after', () => ({ value: { cancel: () => {} } }))
+  }
   on('ui.render', ($: any, e: any) => {
     const { Text } = $.ui.resolve(e)
     return <Text>engine hint</Text>
@@ -170,4 +172,20 @@ test('before the first reply the context bar is drawn empty', async ($, on) => {
   expect(t[1]).toBe('Context ')
   expect(t.some(s => s.includes('–/1.0M'))).toBe(true)
   expect(t.some(s => s.trim() === '–')).toBe(true)
+})
+
+test('a conversation that started without session.start fills itself in', async ($, on) => {
+  const state: Record<string, unknown> = { limits: [], context: null, agentContexts: {}, mainModel: null, band: null }
+  engine(on, state, { stubClock: false })
+  const clock = mock.clock(on, { now: Date.now() })
+  mock.store(on, {
+    lastLimits: [{ kind: 'seven_day', percentUsed: 25, resetsAt: new Date(Date.now() + 48 * HOUR).toISOString() }],
+  })
+  on('session.usage', () => ({
+    value: { startedAt: Date.now(), context: { window: 1_000_000 }, rateLimits: [] },
+  }))
+  await texts($)
+  await clock.settle()
+  expect((state.limits as unknown[]).length).toBe(1)
+  expect(state.context).toEqual({ window: 1_000_000 })
 })
