@@ -4,15 +4,18 @@ A Claude Code mod that shows your plan's usage limits and the current context fi
 
 ```
 ⏵⏵ auto mode on (shift+tab to cycle)
-Context ▇▇▇▇▇▇▇░░░░░░░░░░░░░░░░░  15%  155k/1.0M   Session ▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇░░░░░░░░  62%  23:11
-                                                  Weekly  ▇▇▇▇░░░░░░░░░░░░░░░░░░░░  18%  Thu 00:00
+Context ▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇  15%  155k/1.0M   Session ▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇  62%  23:11
+                                                  Weekly  ▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇  18%  Thu 00:00
 ```
+
+The filled part of each bar is coloured, and the rest is the same block, dimmed.
 
 - **Context:** how full the context window is, as tokens used out of the window size. When you view a subagent's transcript, the bar shows that subagent's context instead.
 - **Session:** the 5-hour usage window, with its reset time.
 - **Weekly:** the 7-day usage window, with its reset day and time.
 - The bars fill green, turn yellow at 70% and red at 90%, and use your theme's colours in light and dark mode.
-- The bars stretch with the terminal width. Every other part has a fixed width, so the bars stay aligned.
+- The bars stretch with the width of the prompt's column, including when a pane is docked beside the transcript. Every other part has a fixed width, so the bars stay aligned.
+- On a narrow terminal (under about 71 columns) the bars stack in a single column, and below about 36 the reset and token figures are dropped.
 
 ## Install
 
@@ -35,10 +38,12 @@ In the desktop app, click **+** next to the prompt box, then **Plugins**. Choose
 ## Notes
 
 - **Subscription only:** the usage limits come with a Pro or Max subscription. With an API key, only the context bar is shown.
-- **When the bars update:** the figures come from the API's responses. Nothing shows until the session's first reply, and the bars update after each one. Usage from your other sessions shows up when this session gets its next response.
-- **Resets:** once a window's reset time passes, its bar drops to 0% straight away, without waiting for the next response.
-- **Subagent window size:** Claude Code only reports the window size for the main conversation. A subagent on the same model gets that size; one on a different model is assumed to have 200k.
-- **Where it draws:** the terminal and the desktop app.
+- **When the bars update:** the figures come from the API's responses, so nothing shows until the session's first reply. The context bars update after every API call, including those within a long turn. The usage limits update when Claude Code reports a change, at the latest when the turn ends. Usage from your other sessions shows up after this session's next response.
+- **Resets:** once a window's reset time passes, its bar drops to 0% without waiting for the next response.
+- **Subagent context:** a subagent's bar shows the input tokens of its latest API call, and 0% until it has made one.
+- **Subagent window size:** Claude Code only reports the window size for the main conversation. A subagent on the same model is measured against that size, and one on any other model against 200k. If the main conversation uses a 1M window and the subagent the standard one, its bar reads low.
+- **Viewed transcript:** the mod learns which transcript you're viewing from the band above the prompt. If another plugin draws that band without passing it on, the Context bar keeps showing the main conversation.
+- **Where it draws:** the terminal. The desktop app draws the hint line too, but the layout has only been checked in the terminal.
 
 ## Development
 

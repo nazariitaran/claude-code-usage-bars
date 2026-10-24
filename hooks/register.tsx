@@ -1,7 +1,7 @@
 import { atom, read, update } from 'claude-code'
-import type { EngineInterface, Register, SessionContextUsage, Timer } from 'claude-code'
+import type { EngineInterface, ModelUsage, Register, Timer } from 'claude-code'
 
-import type { AgentContext, Context, Limit } from '../types'
+import type { AgentContext, Band, Context, Limit } from '../types'
 
 const limits = atom({ plugin: 'usage-bars', key: 'limits' } as const, [] as Limit[])
 const context = atom({ plugin: 'usage-bars', key: 'context' } as const, null as Context | null)
@@ -10,10 +10,7 @@ const agentContexts = atom(
   {} as Record<string, AgentContext>,
 )
 const mainModel = atom({ plugin: 'usage-bars', key: 'mainModel' } as const, null as string | null)
-const viewedAgent = atom(
-  { plugin: 'usage-bars', key: 'viewedAgent' } as const,
-  null as string | null,
-)
+const band = atom({ plugin: 'usage-bars', key: 'band' } as const, null as Band | null)
 
 const LABELS: Record<string, string> = {
   five_hour: 'Session',
@@ -22,7 +19,9 @@ const LABELS: Record<string, string> = {
 }
 const ORDER = ['five_hour', 'seven_day', 'spend_limit']
 const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
-// The engine draws the hint line inset from both terminal edges.
+// The band reports its column less a five-cell mark of its own.
+const BAND_MARK = 5
+// The engine draws the hint line inset from both edges of that column.
 const LINE_INSET = 4
 const COLUMN_GAP = 3
 const MIN_BAR = 8
@@ -31,6 +30,8 @@ const BAR = '▇'
 const LABEL_WIDTH = 7
 // "Sun 00:20", "142k/200k"
 const EXTRA_WIDTH = 9
+const PERCENT_WIDTH = 5
+const FIXED_WIDTH = LABEL_WIDTH + 1 + PERCENT_WIDTH + 2 + EXTRA_WIDTH
 // The engine reports a window size for the main conversation only; a subagent
 // on another model is assumed to have the standard one.
 const DEFAULT_WINDOW = 200_000
@@ -49,7 +50,7 @@ function formatReset(iso: string | undefined, now: number): string {
 }
 
 function formatTokens(n: number): string {
-  return n >= 1_000_000 ? `${(n / 1_000_000).toFixed(1)}M` : `${Math.round(n / 1000)}k`
+  return n >= 999_500 ? `${(n / 1_000_000).toFixed(1)}M` : `${Math.round(n / 1000)}k`
 }
 
 function barColor(percent: number) {
@@ -58,8 +59,10 @@ function barColor(percent: number) {
   return 'success'
 }
 
-function contextCell(tokens: number | undefined, window: number, percent?: number): Cell | null {
-  if (tokens === undefined) return null
+const inputTokens = (u: ModelUsage) =>
+  u.input_tokens + u.cache_read_input_tokens + u.cache_creation_input_tokens
+
+function contextCell(tokens: number, window: number, percent?: number): Cell {
   return {
     key: 'context',
     label: 'Context',
@@ -68,47 +71,55 @@ function contextCell(tokens: number | undefined, window: number, percent?: numbe
   }
 }
 
+// The engine only learns of a reset from the next API response, so a window
+// whose reset time has passed is shown as empty until then.
+function zeroPassed(list: Limit[], now: number): Limit[] {
+  return list.map(l =>
+    l.resetsAt && Date.parse(l.resetsAt) <= now ? { ...l, percentUsed: 0 } : l,
+  )
+}
+
 let resetTimer: Timer | undefined
 
-// The engine only learns of a reset from the next API response, so zero a
-// window ourselves once its reset time passes.
-async function store($: EngineInterface, next: Limit[]) {
-  await update($, limits, () => next)
+function scheduleReset($: EngineInterface, list: Limit[], now: number) {
   resetTimer?.cancel()
-  const now = await $.clock.now()
-  const upcoming = next
+  resetTimer = undefined
+  const upcoming = list
     .map(l => (l.resetsAt ? Date.parse(l.resetsAt) : NaN))
     .filter(t => t > now)
   if (upcoming.length === 0) return
   resetTimer = $.clock.after(Math.min(...upcoming) - now + 1000, async () => {
     const at = await $.clock.now()
-    const current = await read($, limits)
-    await store(
-      $,
-      current.map(l =>
-        l.resetsAt && Date.parse(l.resetsAt) <= at ? { ...l, percentUsed: 0 } : l,
-      ),
-    )
+    const current = await update($, limits, cur => zeroPassed(cur, at))
+    scheduleReset($, current, at)
   })
 }
 
-async function storeContext($: EngineInterface, c: SessionContextUsage) {
-  const { tokens, window, percent } = c
-  await update($, context, () => ({ tokens, window, percent }))
+async function storeLimits($: EngineInterface, next: Limit[]) {
+  const now = await $.clock.now()
+  const stored = zeroPassed(next, now)
+  await update($, limits, () => stored)
+  scheduleReset($, stored, now)
 }
+
+let relaySeq = 0
 
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
     const result = await next(e)
     const usage = await $.session.usage()
-    if (usage.rateLimits.length > 0) await store($, usage.rateLimits)
-    await storeContext($, usage.context)
+    await storeLimits($, usage.rateLimits)
+    const { tokens, window, percent } = usage.context
+    await update($, context, () => ({ tokens, window, percent }))
     return result
   })
 
   on('session.measure', async ($, e, next) => {
-    if (e.changed.includes('rateLimits')) await store($, e.rateLimits)
-    if (e.changed.includes('context')) await storeContext($, e.context)
+    // Stored every time: a new reset time with under a point of movement is
+    // not reported in `changed`.
+    await storeLimits($, e.rateLimits)
+    const { tokens, window, percent } = e.context
+    await update($, context, () => ({ tokens, window, percent }))
     return next(e)
   })
 
@@ -116,13 +127,17 @@ export const register: Register = on => {
     const result = yield* next(e)
     const usage = result.usage
     if (!usage) return result
-    if (e.agentId === undefined) {
+    const tokens = inputTokens(usage)
+    const agentId = e.agentId
+    if (agentId === undefined) {
+      // session.measure only fires once the whole turn ends; this keeps the
+      // main bar moving during a long turn.
       await update($, mainModel, () => usage.model)
+      await update($, context, cur =>
+        cur ? { tokens, window: cur.window, percent: Math.round((tokens / cur.window) * 100) } : cur,
+      )
       return result
     }
-    const tokens =
-      usage.input_tokens + usage.cache_read_input_tokens + usage.cache_creation_input_tokens
-    const agentId = e.agentId
     await update($, agentContexts, all => ({
       ...all,
       [agentId]: { tokens, model: usage.model },
@@ -130,18 +145,29 @@ export const register: Register = on => {
     return result
   })
 
-  // Only the band above the prompt is told which transcript is in view, so it
-  // relays the switch to the hint line. A render may not write state itself.
+  // Only the band above the prompt is told which transcript is in view and how
+  // wide its column is, so it relays both to the hint line. A render may not
+  // write state, hence the timer; the sequence drops relays a newer one overtook.
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
-    const agentId = e.props.view.agentId ?? null
-    if (agentId !== (await read($, viewedAgent))) {
-      $.clock.after(0, () => void update($, viewedAgent, () => agentId))
+    const seen: Band = {
+      agentId: e.props.view.agentId ?? null,
+      columns: e.props.bodyColumns + BAND_MARK,
+    }
+    const stored = await read($, band)
+    if (stored?.agentId !== seen.agentId || stored.columns !== seen.columns) {
+      const seq = ++relaySeq
+      $.clock.after(0, () => {
+        if (seq === relaySeq) void update($, band, () => seen)
+      })
     }
     return next(e)
   })
 
   on('ui.render', { component: 'PromptHint' }, async ($, e, next) => {
     const line = await next(e)
+    const relayed = await read($, band)
+    const columns = relayed?.columns ?? e.viewport?.columns
+    if (columns === undefined) return line
     const now = await $.clock.now()
 
     const right: Cell[] = [...(await read($, limits))]
@@ -154,24 +180,29 @@ export const register: Register = on => {
       }))
 
     const main = await read($, context)
-    const agentId = await read($, viewedAgent)
-    let ctx: Cell | null
+    const agentId = relayed?.agentId ?? null
+    let ctx: Cell | null = null
     if (agentId === null) {
-      ctx = main ? contextCell(main.tokens, main.window, main.percent) : null
+      if (main?.tokens !== undefined) ctx = contextCell(main.tokens, main.window, main.percent)
     } else {
       const agent = (await read($, agentContexts))[agentId]
-      const window =
-        main && agent?.model === (await read($, mainModel)) ? main.window : DEFAULT_WINDOW
-      ctx = contextCell(agent?.tokens, window)
+      const sameModel = agent !== undefined && agent.model === (await read($, mainModel))
+      const window = main && sameModel ? main.window : DEFAULT_WINDOW
+      ctx = contextCell(agent?.tokens ?? 0, window)
     }
     const left = ctx ? [ctx] : []
     if (left.length === 0 && right.length === 0) return line
 
     const { Box, Text } = $.ui.resolve(e)
-    const cellWidth = Math.floor(((e.viewport?.columns ?? 80) - LINE_INSET - COLUMN_GAP) / 2)
-    // "label ", bar, " 100%", "  extra": every part but the bar is fixed-width
-    // so the bar only changes with the terminal.
-    const barWidth = Math.max(MIN_BAR, cellWidth - (LABEL_WIDTH + 1) - 5 - (2 + EXTRA_WIDTH))
+    const room = columns - LINE_INSET
+    const halfWidth = Math.floor((room - COLUMN_GAP) / 2)
+    const isTwoColumn = halfWidth >= FIXED_WIDTH + MIN_BAR
+    const cellWidth = isTwoColumn ? halfWidth : room
+    // Every part but the bar is fixed-width so the bar only changes with the
+    // column; on a very narrow one the reset/token column goes first.
+    const showExtra = cellWidth >= FIXED_WIDTH + MIN_BAR
+    const fixed = showExtra ? FIXED_WIDTH : FIXED_WIDTH - 2 - EXTRA_WIDTH
+    const barWidth = Math.max(1, cellWidth - fixed)
 
     const cell = (c: Cell | undefined) => {
       if (!c) return null
@@ -182,7 +213,16 @@ export const register: Register = on => {
           <Text color={barColor(c.percent)}>{BAR.repeat(filled)}</Text>
           <Text dimColor>{BAR.repeat(barWidth - filled)}</Text>
           <Text>{` ${String(c.percent).padStart(3)}%`}</Text>
-          <Text dimColor>{`  ${c.extra.padEnd(EXTRA_WIDTH)}`}</Text>
+          {showExtra ? <Text dimColor>{`  ${c.extra.padEnd(EXTRA_WIDTH)}`}</Text> : null}
+        </Box>
+      )
+    }
+
+    if (!isTwoColumn) {
+      return (
+        <Box flexDirection="column">
+          {line}
+          {[...left, ...right].map(cell)}
         </Box>
       )
     }
