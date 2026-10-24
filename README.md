@@ -22,7 +22,7 @@ The filled part of each bar is coloured, and the rest is the same block, dimmed.
 At the prompt of a Claude Code terminal session:
 
 ```
-/plugin install usage-bars --marketplace <owner>/claude-code-usage-bars
+/plugin install usage-bars --marketplace nazariitaran/claude-code-usage-bars
 ```
 
 Answer `y` to add the marketplace, then pick the user scope.
@@ -30,10 +30,10 @@ Answer `y` to add the marketplace, then pick the user scope.
 From a shell:
 
 ```
-claude plugin install usage-bars --marketplace <owner>/claude-code-usage-bars
+claude plugin install usage-bars --marketplace nazariitaran/claude-code-usage-bars
 ```
 
-In the desktop app, click **+** next to the prompt box, then **Plugins**. Choose **Add marketplace**, enter `<owner>/claude-code-usage-bars`, then choose **Add plugin**.
+In the desktop app, click **+** next to the prompt box, then **Plugins**. Choose **Add marketplace**, enter `nazariitaran/claude-code-usage-bars`, then choose **Add plugin**.
 
 ## Notes
 
