@@ -8,7 +8,7 @@ While you view a subagent's transcript, the Context bar shows that subagent's co
 
 ![Usage bars while viewing a subagent](docs/subagent-view.png)
 
-- **Context:** how full the context window is, as tokens used out of the window size. When you view a subagent's transcript, the bar shows that subagent's context instead.
+- **Context:** how full the context window is, as tokens used out of the window size.
 - **Session:** the 5-hour usage window, with its reset time.
 - **Weekly:** the 7-day usage window, with its reset day and time.
 - The bars fill green, turn yellow at 70% and red at 90%, and use your theme's colours in light and dark mode.
@@ -39,10 +39,8 @@ In the desktop app, click **+** next to the prompt box, then **Plugins**. Choose
 - **When the bars update:** the figures come from the API's responses. The context bars update after every API call, including those within a long turn. The usage limits update when Claude Code reports a change, at the latest when the turn ends. Usage from your other sessions shows up after this session's next response.
 - **New, cleared and resumed sessions:** the usage limits start from the last figures any session saw, until the first reply brings fresh ones. The Context bar is drawn empty, with `–`, until then.
 - **Resets:** once a window's reset time passes, its bar drops to 0% without waiting for the next response.
-- **Subagent context:** a subagent's bar shows the input tokens of its latest API call, and 0% until it has made one.
-- **Subagent window size:** Claude Code only reports the window size for the main conversation. A subagent on the same model is measured against that size, and one on any other model against 200k. If the main conversation uses a 1M window and the subagent the standard one, its bar reads low.
+- **Subagents:** a subagent's bar shows the input tokens of its latest API call, and 0% until it has made one. Claude Code only reports the window size for the main conversation, so a subagent on the same model is measured against that size and one on any other model against 200k. If the main conversation uses a 1M window and the subagent the standard one, its bar reads low.
 - **Viewed transcript:** the mod learns which transcript you're viewing from the band above the prompt. If another plugin draws that band without passing it on, the Context bar keeps showing the main conversation.
-- **Where it draws:** the terminal. The desktop app draws the hint line too, but the layout has only been checked in the terminal.
 
 ## Development
 
