@@ -1,0 +1,6 @@
+{
+  "name": "claude-code-usage-bars",
+  "description": "Usage-limit and context progress bars for Claude Code",
+  "owner": { "name": "Nazarii Taran" },
+  "plugins": [{ "name": "usage-bars", "source": "./" }]
+}

@@ -1,0 +1,9 @@
+{
+  "name": "usage-bars",
+  "version": "0.1.0",
+  "description": "Session and weekly usage limits, plus context fill, as progress bars under the Claude Code prompt",
+  "author": { "name": "Nazarii Taran" },
+  "license": "MIT",
+  "keywords": ["usage", "rate-limits", "context", "status"],
+  "types": "./types/index.d.ts"
+}
