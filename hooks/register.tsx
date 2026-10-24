@@ -31,12 +31,14 @@ const LABEL_WIDTH = 7
 // "Sun 00:20", "142k/200k"
 const EXTRA_WIDTH = 9
 const PERCENT_WIDTH = 5
+const LIMITS_KEY = 'lastLimits'
 const FIXED_WIDTH = LABEL_WIDTH + 1 + PERCENT_WIDTH + 2 + EXTRA_WIDTH
 // The engine reports a window size for the main conversation only; a subagent
 // on another model is assumed to have the standard one.
 const DEFAULT_WINDOW = 200_000
 
-type Cell = { key: string; label: string; percent: number; extra: string }
+// `percent` is null while there is nothing to measure yet.
+type Cell = { key: string; label: string; percent: number | null; extra: string }
 
 const pad2 = (n: number) => String(n).padStart(2, '0')
 
@@ -62,7 +64,10 @@ function barColor(percent: number) {
 const inputTokens = (u: ModelUsage) =>
   u.input_tokens + u.cache_read_input_tokens + u.cache_creation_input_tokens
 
-function contextCell(tokens: number, window: number, percent?: number): Cell {
+function contextCell(tokens: number | undefined, window: number, percent?: number): Cell {
+  if (tokens === undefined) {
+    return { key: 'context', label: 'Context', percent: null, extra: `–/${formatTokens(window)}` }
+  }
   return {
     key: 'context',
     label: 'Context',
@@ -95,11 +100,21 @@ function scheduleReset($: EngineInterface, list: Limit[], now: number) {
   })
 }
 
+// An empty reading means the engine has none yet, not that the limits went
+// away, so the last figures stay up.
 async function storeLimits($: EngineInterface, next: Limit[]) {
+  if (next.length === 0) return
   const now = await $.clock.now()
   const stored = zeroPassed(next, now)
   await update($, limits, () => stored)
   scheduleReset($, stored, now)
+}
+
+// Limits are the account's, not the conversation's, so the last reading is
+// kept across sessions: a /clear or resume starts with no reading of its own.
+async function lastKnownLimits($: EngineInterface): Promise<Limit[]> {
+  const saved = await $.store.get(LIMITS_KEY)
+  return Array.isArray(saved) ? (saved as Limit[]) : []
 }
 
 let relaySeq = 0
@@ -108,7 +123,12 @@ export const register: Register = on => {
   on('session.start', async ($, e, next) => {
     const result = await next(e)
     const usage = await $.session.usage()
-    await storeLimits($, usage.rateLimits)
+    if (usage.rateLimits.length > 0) {
+      await storeLimits($, usage.rateLimits)
+      await $.store.set(LIMITS_KEY, usage.rateLimits)
+    } else {
+      await storeLimits($, await lastKnownLimits($))
+    }
     const { tokens, window, percent } = usage.context
     await update($, context, () => ({ tokens, window, percent }))
     return result
@@ -118,6 +138,7 @@ export const register: Register = on => {
     // Stored every time: a new reset time with under a point of movement is
     // not reported in `changed`.
     await storeLimits($, e.rateLimits)
+    if (e.rateLimits.length > 0) await $.store.set(LIMITS_KEY, e.rateLimits)
     const { tokens, window, percent } = e.context
     await update($, context, () => ({ tokens, window, percent }))
     return next(e)
@@ -183,7 +204,7 @@ export const register: Register = on => {
     const agentId = relayed?.agentId ?? null
     let ctx: Cell | null = null
     if (agentId === null) {
-      if (main?.tokens !== undefined) ctx = contextCell(main.tokens, main.window, main.percent)
+      if (main) ctx = contextCell(main.tokens, main.window, main.percent)
     } else {
       const agent = (await read($, agentContexts))[agentId]
       const sameModel = agent !== undefined && agent.model === (await read($, mainModel))
@@ -206,13 +227,18 @@ export const register: Register = on => {
 
     const cell = (c: Cell | undefined) => {
       if (!c) return null
-      const filled = Math.round((Math.min(c.percent, 100) / 100) * barWidth)
+      const percent = c.percent ?? 0
+      const filled = Math.round((Math.min(percent, 100) / 100) * barWidth)
       return (
         <Box key={c.key}>
           <Text dimColor>{c.label.padEnd(LABEL_WIDTH)} </Text>
-          <Text color={barColor(c.percent)}>{BAR.repeat(filled)}</Text>
+          <Text color={barColor(percent)}>{BAR.repeat(filled)}</Text>
           <Text dimColor>{BAR.repeat(barWidth - filled)}</Text>
-          <Text>{` ${String(c.percent).padStart(3)}%`}</Text>
+          {c.percent === null ? (
+            <Text dimColor>{'–'.padStart(PERCENT_WIDTH)}</Text>
+          ) : (
+            <Text>{` ${String(c.percent).padStart(3)}%`}</Text>
+          )}
           {showExtra ? <Text dimColor>{`  ${c.extra.padEnd(EXTRA_WIDTH)}`}</Text> : null}
         </Box>
       )

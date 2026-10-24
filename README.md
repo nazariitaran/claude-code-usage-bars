@@ -36,7 +36,8 @@ In the desktop app, click **+** next to the prompt box, then **Plugins**. Choose
 ## Notes
 
 - **Subscription only:** the usage limits come with a Pro or Max subscription. With an API key, only the context bar is shown.
-- **When the bars update:** the figures come from the API's responses, so nothing shows until the session's first reply. The context bars update after every API call, including those within a long turn. The usage limits update when Claude Code reports a change, at the latest when the turn ends. Usage from your other sessions shows up after this session's next response.
+- **When the bars update:** the figures come from the API's responses. The context bars update after every API call, including those within a long turn. The usage limits update when Claude Code reports a change, at the latest when the turn ends. Usage from your other sessions shows up after this session's next response.
+- **New, cleared and resumed sessions:** the usage limits start from the last figures any session saw, until the first reply brings fresh ones. The Context bar is drawn empty, with `–`, until then.
 - **Resets:** once a window's reset time passes, its bar drops to 0% without waiting for the next response.
 - **Subagent context:** a subagent's bar shows the input tokens of its latest API call, and 0% until it has made one.
 - **Subagent window size:** Claude Code only reports the window size for the main conversation. A subagent on the same model is measured against that size, and one on any other model against 200k. If the main conversation uses a 1M window and the subagent the standard one, its bar reads low.

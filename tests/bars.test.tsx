@@ -128,3 +128,46 @@ test('a window whose reset passed is stored as empty at session start', async ($
   expect(stored.find(l => l.kind === 'five_hour')?.percentUsed).toBe(0)
   expect(stored.find(l => l.kind === 'seven_day')?.percentUsed).toBe(18)
 })
+
+function startWith(on: any, rateLimits: unknown[], saved: Record<string, unknown>) {
+  on('session.start', (_: unknown, e: { cwd: string }) => ({ cwd: e.cwd }))
+  on('session.usage', () => ({
+    value: { startedAt: Date.now(), context: { window: 1_000_000 }, rateLimits },
+  }))
+  on('store.get', (_: unknown, e: { key: string }) => ({ value: saved[e.key] }))
+  on('store.set', (_: unknown, e: { key: string; value: unknown }) => {
+    saved[e.key] = e.value
+    return { value: undefined }
+  })
+}
+
+test('after a /clear or resume the last known limits show at once', async ($, on) => {
+  const state = seed({ limits: [] })
+  engine(on, state)
+  startWith(on, [], {
+    lastLimits: [
+      { kind: 'five_hour', percentUsed: 40, resetsAt: new Date(Date.now() - HOUR).toISOString() },
+      { kind: 'seven_day', percentUsed: 25, resetsAt: new Date(Date.now() + 48 * HOUR).toISOString() },
+    ],
+  })
+  await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+  const stored = state.limits as { kind: string; percentUsed: number }[]
+  expect(stored.find(l => l.kind === 'five_hour')?.percentUsed).toBe(0)
+  expect(stored.find(l => l.kind === 'seven_day')?.percentUsed).toBe(25)
+})
+
+test('a fresh reading is saved for the next session', async ($, on) => {
+  const saved: Record<string, unknown> = {}
+  engine(on, seed())
+  startWith(on, [{ kind: 'five_hour', percentUsed: 12 }], saved)
+  await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+  expect(saved.lastLimits).toEqual([{ kind: 'five_hour', percentUsed: 12 }])
+})
+
+test('before the first reply the context bar is drawn empty', async ($, on) => {
+  engine(on, seed({ context: { window: 1_000_000 } }))
+  const { found: t } = await texts($)
+  expect(t[1]).toBe('Context ')
+  expect(t.some(s => s.includes('–/1.0M'))).toBe(true)
+  expect(t.some(s => s.trim() === '–')).toBe(true)
+})
