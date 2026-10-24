@@ -2,13 +2,11 @@
 
 A Claude Code mod that shows your plan's usage limits and the current context fill as progress bars under the prompt, right below the mode line.
 
-```
-⏵⏵ auto mode on (shift+tab to cycle)
-Context ▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇  15%  155k/1.0M   Session ▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇  62%  23:11
-                                                  Weekly  ▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇  18%  Thu 00:00
-```
+![Usage bars under the prompt in the main conversation](docs/main-view.png)
 
-The filled part of each bar is coloured, and the rest is the same block, dimmed.
+While you view a subagent's transcript, the Context bar shows that subagent's context:
+
+![Usage bars while viewing a subagent](docs/subagent-view.png)
 
 - **Context:** how full the context window is, as tokens used out of the window size. When you view a subagent's transcript, the bar shows that subagent's context instead.
 - **Session:** the 5-hour usage window, with its reset time.
