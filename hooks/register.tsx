@@ -18,6 +18,11 @@ const LABELS: Record<string, string> = {
   spend_limit: 'Spend',
 }
 const ORDER = ['five_hour', 'seven_day', 'spend_limit']
+const LAYOUT_COLUMNS: Record<string, number> = {
+  'one-column': 1,
+  'two-columns': 2,
+  'three-columns': 3,
+}
 const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 // The band reports its column less a five-cell mark of its own.
 const BAND_MARK = 5
@@ -132,7 +137,14 @@ async function hydrate($: EngineInterface) {
 let relaySeq = 0
 let isHydrating = false
 
-export const register: Register = on => {
+export const register: Register = (on, options) => {
+  const maxColumns = LAYOUT_COLUMNS[String(options.layout)] ?? 2
+  const showContext = options.showContext !== false
+  const hidden = new Set([
+    ...(options.showSession === false ? ['five_hour'] : []),
+    ...(options.showWeekly === false ? ['seven_day'] : []),
+  ])
+
   on('session.start', async ($, e, next) => {
     const result = await next(e)
     await hydrate($)
@@ -206,6 +218,7 @@ export const register: Register = on => {
     const now = await $.clock.now()
 
     const right: Cell[] = [...(await read($, limits))]
+      .filter(l => !hidden.has(l.kind))
       .sort((a, b) => rank(a.kind) - rank(b.kind))
       .map(l => ({
         key: l.kind,
@@ -235,14 +248,16 @@ export const register: Register = on => {
       const window = main && sameModel ? main.window : DEFAULT_WINDOW
       ctx = contextCell(agent?.tokens ?? 0, window)
     }
-    const left = ctx ? [ctx] : []
-    if (left.length === 0 && right.length === 0) return line
+    const left = ctx && showContext ? [ctx] : []
+    const all = [...left, ...right]
+    if (all.length === 0) return line
 
     const { Box, Text } = $.ui.resolve(e)
     const room = columns - LINE_INSET
-    const halfWidth = Math.floor((room - COLUMN_GAP) / 2)
-    const isTwoColumn = halfWidth >= FIXED_WIDTH + MIN_BAR
-    const cellWidth = isTwoColumn ? halfWidth : room
+    const widthFor = (n: number) => Math.floor((room - (n - 1) * COLUMN_GAP) / n)
+    let count = Math.min(maxColumns, all.length)
+    while (count > 1 && widthFor(count) < FIXED_WIDTH + MIN_BAR) count--
+    const cellWidth = widthFor(count)
     // Every part but the bar is fixed-width so the bar only changes with the
     // column; on a very narrow one the reset/token column goes first.
     const showExtra = cellWidth >= FIXED_WIDTH + MIN_BAR
@@ -268,27 +283,25 @@ export const register: Register = on => {
       )
     }
 
-    if (!isTwoColumn) {
-      return (
-        <Box flexDirection="column">
-          {line}
-          {[...left, ...right].map(cell)}
-        </Box>
-      )
-    }
+    // Two columns keep Context on its own on the left with the limits stacked
+    // beside it; otherwise the bars fill the rows in order.
+    const isSplit = count === 2 && left.length > 0 && right.length > 0
+    const grid: (Cell | undefined)[][] = isSplit
+      ? Array.from({ length: Math.max(left.length, right.length) }, (_, i) => [left[i], right[i]])
+      : Array.from({ length: Math.ceil(all.length / count) }, (_, i) =>
+          all.slice(i * count, (i + 1) * count),
+        )
 
-    const rows = Math.max(left.length, right.length)
     return (
       <Box flexDirection="column">
         {line}
-        {Array.from({ length: rows }, (_, i) => (
+        {grid.map((row, i) => (
           <Box key={`row-${i}`}>
-            <Box width={cellWidth} flexShrink={0}>
-              {cell(left[i])}
-            </Box>
-            <Box marginLeft={COLUMN_GAP} flexShrink={0}>
-              {cell(right[i])}
-            </Box>
+            {row.map((c, j) => (
+              <Box key={`col-${j}`} width={cellWidth} marginLeft={j > 0 ? COLUMN_GAP : 0} flexShrink={0}>
+                {cell(c)}
+              </Box>
+            ))}
           </Box>
         ))}
       </Box>

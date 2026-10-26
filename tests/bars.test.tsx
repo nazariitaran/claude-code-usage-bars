@@ -46,7 +46,7 @@ function engine(on: any, state: Record<string, unknown>, { stubClock = true } = 
 
 async function texts($: any, columns = 200) {
   const ui = await $.ui.mount(hint(columns))
-  const found = (await ui.findAll({ type: 'Text' })).map((t: { text: string }) => t.text)
+  const found: string[] = (await ui.findAll({ type: 'Text' })).map((t: { text: string }) => t.text)
   const drawn = await ui.drawn()
   await ui.unmount()
   return { found, drawn }
@@ -189,3 +189,125 @@ test('a conversation that started without session.start fills itself in', async 
   expect((state.limits as unknown[]).length).toBe(1)
   expect(state.context).toEqual({ window: 1_000_000 })
 })
+
+// The label in each column of each bar row, '' for an empty column.
+function firstText(node: any): string {
+  if (typeof node === 'string') return node
+  for (const k of node?.children ?? []) {
+    const t = firstText(k)
+    if (t.trim()) return t
+  }
+  return ''
+}
+
+async function grid($: any, columns = 200) {
+  const { drawn } = await texts($, columns)
+  return (drawn.children as any[]).slice(1).map(row => (row.children as any[]).map(c => firstText(c).trim()))
+}
+
+test('two columns by default: context on the left, limits stacked on the right', async ($, on) => {
+  engine(on, seed())
+  expect(await grid($)).toEqual([
+    ['Context', 'Session'],
+    ['', 'Weekly'],
+  ])
+})
+
+test('one column stacks every bar', { options: { layout: 'one-column' } }, async ($, on) => {
+  engine(on, seed())
+  expect(await grid($)).toEqual([['Context'], ['Session'], ['Weekly']])
+})
+
+test('three columns put each bar in its own column', { options: { layout: 'three-columns' } }, async ($, on) => {
+  engine(on, seed())
+  expect(await grid($)).toEqual([['Context', 'Session', 'Weekly']])
+})
+
+test('three columns wrap a fourth bar onto the next row', { options: { layout: 'three-columns' } }, async ($, on) => {
+  engine(on, seed({ limits: [...(seed().limits as unknown[]), { kind: 'spend_limit', percentUsed: 5 }] }))
+  expect(await grid($)).toEqual([['Context', 'Session', 'Weekly'], ['Spend']])
+})
+
+test('three columns fall back to two where three do not fit', { options: { layout: 'three-columns' } }, async ($, on) => {
+  engine(on, seed())
+  expect(await grid($, 100)).toEqual([
+    ['Context', 'Session'],
+    ['', 'Weekly'],
+  ])
+})
+
+test('an unknown layout counts as the default', { options: { layout: 'grid' } }, async ($, on) => {
+  engine(on, seed())
+  expect(await grid($)).toEqual([
+    ['Context', 'Session'],
+    ['', 'Weekly'],
+  ])
+})
+
+test('two columns without context put the limits side by side', { options: { showContext: false } }, async ($, on) => {
+  engine(on, seed())
+  expect(await grid($)).toEqual([['Session', 'Weekly']])
+})
+
+test(
+  'three columns with a bar hidden leave no empty column',
+  { options: { layout: 'three-columns', showWeekly: false } },
+  async ($, on) => {
+    engine(on, seed())
+    const { drawn } = await texts($)
+    const row = (drawn.children as any[])[1]
+    expect(row.children.map((c: any) => firstText(c).trim())).toEqual(['Context', 'Session'])
+    expect(row.children[0].props.width).toBe(Math.floor((200 - 4 - 3) / 2))
+  },
+)
+
+test('hidden limits are not drawn', { options: { layout: 'one-column', showSession: false } }, async ($, on) => {
+  engine(on, seed())
+  const { found } = await texts($)
+  expect(found.some(s => s.startsWith('Session'))).toBe(false)
+  expect(await grid($)).toEqual([['Context'], ['Weekly']])
+})
+
+test('context alone takes the whole row', { options: { showSession: false, showWeekly: false } }, async ($, on) => {
+  engine(on, seed())
+  const { drawn } = await texts($)
+  const rows = (drawn.children as any[]).slice(1)
+  expect(rows.length).toBe(1)
+  expect(rows[0].children[0].props.width).toBe(200 - 4)
+})
+
+test(
+  'with every bar hidden only the hint line is drawn',
+  { options: { showContext: false, showSession: false, showWeekly: false } },
+  async ($, on) => {
+    engine(on, seed())
+    const { found } = await texts($)
+    expect(found).toEqual(['engine hint'])
+  },
+)
+
+test('hiding context still fills the limits in after a /clear', { options: { showContext: false } }, async ($, on) => {
+  const state: Record<string, unknown> = { limits: [], context: null, agentContexts: {}, mainModel: null, band: null }
+  engine(on, state, { stubClock: false })
+  const clock = mock.clock(on, { now: Date.now() })
+  mock.store(on, {
+    lastLimits: [{ kind: 'seven_day', percentUsed: 25, resetsAt: new Date(Date.now() + 48 * HOUR).toISOString() }],
+  })
+  on('session.usage', () => ({
+    value: { startedAt: Date.now(), context: { window: 1_000_000 }, rateLimits: [] },
+  }))
+  await texts($)
+  await clock.settle()
+  expect((state.limits as unknown[]).length).toBe(1)
+})
+
+for (const layout of ['one-column', 'three-columns']) {
+  for (const columns of [200, 120, 100, 80, 71, 60, 40]) {
+    test(`${layout}: no bar row is wider than the hint line at ${columns} columns`, { options: { layout } }, async ($, on) => {
+      engine(on, seed())
+      const widths = await rowWidths($, columns)
+      expect(widths.length).toBeGreaterThan(0)
+      for (const w of widths) expect(w).toBeLessThanOrEqual(columns - 4)
+    })
+  }
+}
