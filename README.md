@@ -14,6 +14,7 @@ While you view a subagent's transcript, the Context bar shows that subagent's co
 - The bars fill green, turn yellow at 70% and red at 90%, and use your theme's colours in light and dark mode.
 - The bars stretch with the width of the prompt's column, including when a pane is docked beside the transcript. Every other part has a fixed width, so the bars stay aligned.
 - On a narrow terminal (under about 71 columns) the bars stack in a single column, and below about 36 the reset and token figures are dropped.
+- The layout and which bars show can be changed: see [Options](#options).
 
 ## Install
 
@@ -32,6 +33,21 @@ claude plugin install usage-bars --marketplace nazariitaran/claude-code-usage-ba
 ```
 
 In the desktop app, click **+** next to the prompt box, then **Plugins**. Choose **Add marketplace**, enter `nazariitaran/claude-code-usage-bars`, then choose **Add plugin**.
+
+## Options
+
+Set them when you install, or later in `/config`. A change applies straight away.
+
+| Option | Values | Default |
+| --- | --- | --- |
+| Layout | `one-column`: every bar stacked<br>`two-columns`: Context on the left, the limits on the right<br>`three-columns`: each bar in its own column | `two-columns` |
+| Show Context bar | on / off | on |
+| Show Session bar | on / off | on |
+| Show Weekly bar | on / off | on |
+
+- The layout sets the most columns. A terminal too narrow for them gets fewer: three columns need about 106, two need about 71.
+- Hidden bars leave no gap. With Context hidden, two columns put Session and Weekly side by side, and three columns with one bar hidden draw two.
+- A gateway's Spend bar has no toggle. It follows the limits, on the next row in three columns.
 
 ## Notes
 
