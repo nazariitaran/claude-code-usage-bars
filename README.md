@@ -36,14 +36,16 @@ In the desktop app, click **+** next to the prompt box, then **Plugins**. Choose
 
 ## Options
 
-Set them when you install, or later in `/config`. A change applies straight away.
+Set them when you install, or later in `/config`: type `usage-` to filter the list. A change applies straight away.
+
+![The usage-bars options in /config](docs/config-view.png)
 
 | Option | Values | Default |
 | --- | --- | --- |
 | Layout | `one-column`: every bar stacked<br>`two-columns`: Context on the left, the limits on the right<br>`three-columns`: each bar in its own column | `two-columns` |
-| Show Context bar | on / off | on |
-| Show Session bar | on / off | on |
-| Show Weekly bar | on / off | on |
+| Show Context bar | `true` / `false` | `true` |
+| Show Session bar | `true` / `false` | `true` |
+| Show Weekly bar | `true` / `false` | `true` |
 
 - The layout sets the most columns. A terminal too narrow for them gets fewer: three columns need about 106, two need about 71.
 - Hidden bars leave no gap. With Context hidden, two columns put Session and Weekly side by side, and three columns with one bar hidden draw two.
