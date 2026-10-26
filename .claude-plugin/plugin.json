@@ -5,5 +5,32 @@
   "author": { "name": "Nazarii Taran" },
   "license": "MIT",
   "keywords": ["usage", "rate-limits", "context", "status"],
-  "types": "./types/index.d.ts"
+  "types": "./types/index.d.ts",
+  "userConfig": {
+    "layout": {
+      "type": "string",
+      "title": "Layout",
+      "description": "How the bars are arranged: one column, Context beside the limits, or each bar in its own column",
+      "options": ["one-column", "two-columns", "three-columns"],
+      "default": "two-columns"
+    },
+    "showContext": {
+      "type": "boolean",
+      "title": "Show Context bar",
+      "description": "Show how full the context window is",
+      "default": true
+    },
+    "showSession": {
+      "type": "boolean",
+      "title": "Show Session bar",
+      "description": "Show the 5-hour usage window",
+      "default": true
+    },
+    "showWeekly": {
+      "type": "boolean",
+      "title": "Show Weekly bar",
+      "description": "Show the 7-day usage window",
+      "default": true
+    }
+  }
 }
