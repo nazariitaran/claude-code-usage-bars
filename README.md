@@ -36,7 +36,7 @@ In the desktop app, click **+** next to the prompt box, then **Plugins**. Choose
 
 ## Options
 
-Set them when you install, or later in `/config`: type `usage-` to filter the list. A change applies straight away.
+Set them when you install, or later in `/config`: type `usage-bars` to filter the list. A change applies straight away.
 
 ![The usage-bars options in /config](docs/config-view.png)
 
