@@ -19,7 +19,7 @@ function seed(overrides: Record<string, unknown> = {}): Record<string, unknown> 
       { kind: 'five_hour', percentUsed: 62, resetsAt: new Date(Date.now() + 2 * HOUR).toISOString() },
     ],
     context: { tokens: 142_000, window: 1_000_000, percent: 14 },
-    agentContexts: { sub: { tokens: 30_000, model: 'claude-haiku-5-5' } },
+    agentContexts: { sub: { tokens: 30_000, model: 'claude-haiku-4-5' } },
     mainModel: 'claude-opus-5-5',
     band: null,
     ...overrides,
@@ -61,11 +61,77 @@ test('main view: context on the left, limits on the right', async ($, on) => {
   expect(t.some(s => s.includes('62%'))).toBe(true)
 })
 
-test('subagent view: that agent context, standard window for another model', async ($, on) => {
+test('subagent view: that agent context, its own model window when it is not the main one', async ($, on) => {
   engine(on, seed({ band: { agentId: 'sub', columns: 200 } }))
   const { found: t } = await texts($)
   expect(t.some(s => s.includes('30k/200k'))).toBe(true)
   expect(t.some(s => s.includes(' 15%'))).toBe(true)
+})
+
+test('a subagent on the main model is measured against the main window', async ($, on) => {
+  engine(
+    on,
+    seed({
+      band: { agentId: 'sub', columns: 200 },
+      agentContexts: { sub: { tokens: 30_000, model: 'claude-opus-5-5' } },
+    }),
+  )
+  const { found: t } = await texts($)
+  expect(t.some(s => s.includes('30k/1.0M'))).toBe(true)
+})
+
+const SUBAGENT_WINDOWS = [
+  ['claude-sonnet-5-5', '30k/1.0M'],
+  ['claude-sonnet-4-6', '30k/1.0M'],
+  ['claude-haiku-5-5', '30k/1.0M'],
+  ['claude-fable-5-1', '30k/1.0M'],
+  ['claude-haiku-4-5-20251001', '30k/200k'],
+  ['claude-sonnet-4-5-20250929', '30k/200k'],
+  ['claude-sonnet-4-20250514', '30k/200k'],
+  ['claude-opus-4-5', '30k/200k'],
+  ['claude-3-5-sonnet-20241022', '30k/200k'],
+  ['something-else', '30k/200k'],
+]
+
+for (const [model, shown] of SUBAGENT_WINDOWS) {
+  test(`a subagent on ${model} shows ${shown}`, async ($, on) => {
+    engine(
+      on,
+      seed({
+        band: { agentId: 'sub', columns: 200 },
+        mainModel: 'claude-opus-5-5',
+        agentContexts: { sub: { tokens: 30_000, model } },
+      }),
+    )
+    const { found: t } = await texts($)
+    expect(t.some(s => s.includes(shown))).toBe(true)
+  })
+}
+
+test('a subagent past the standard window is measured against the large one', async ($, on) => {
+  engine(
+    on,
+    seed({
+      band: { agentId: 'sub', columns: 200 },
+      agentContexts: { sub: { tokens: 250_000, model: 'claude-sonnet-5-5' } },
+    }),
+  )
+  const { found: t } = await texts($)
+  expect(t.some(s => s.includes('250k/1.0M'))).toBe(true)
+  expect(t.some(s => s.includes(' 25%'))).toBe(true)
+})
+
+test('a subagent is sized by its own model when the main model is not known', async ($, on) => {
+  engine(
+    on,
+    seed({
+      band: { agentId: 'sub', columns: 200 },
+      mainModel: null,
+      agentContexts: { sub: { tokens: 30_000, model: 'claude-sonnet-5-5' } },
+    }),
+  )
+  const { found: t } = await texts($)
+  expect(t.some(s => s.includes('30k/1.0M'))).toBe(true)
 })
 
 test('a subagent with no steps yet shows an empty context bar', async ($, on) => {

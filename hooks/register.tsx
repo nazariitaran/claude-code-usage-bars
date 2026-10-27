@@ -38,9 +38,29 @@ const EXTRA_WIDTH = 9
 const PERCENT_WIDTH = 5
 const LIMITS_KEY = 'lastLimits'
 const FIXED_WIDTH = LABEL_WIDTH + 1 + PERCENT_WIDTH + 2 + EXTRA_WIDTH
-// The engine reports a window size for the main conversation only; a subagent
-// on another model is assumed to have the standard one.
-const DEFAULT_WINDOW = 200_000
+// The engine reports a window size for the main conversation only, so a
+// subagent on another model is measured against what its model id implies.
+const WINDOW_SIZE_200k = 200_000
+const WINDOW_SIZE_1M = 1_000_000
+// First version of each family with the 1M window, from the models overview.
+const WINDOW_SIZE_1M_FROM: Record<string, number> = {
+  fable: 5,
+  mythos: 5,
+  opus: 4.6,
+  sonnet: 4.6,
+  haiku: 5,
+}
+// Dated ids ("claude-sonnet-4-20250514") have no minor version.
+const MODEL_ID = /^claude-(\w+?)-(\d+)(?:-(\d{1,2})(?!\d))?/
+
+function modelWindow(model: string | undefined): number {
+  const match = model === undefined ? null : MODEL_ID.exec(model)
+  if (!match) return WINDOW_SIZE_200k
+  const [, family, major, minor] = match
+  const from = WINDOW_SIZE_1M_FROM[family]
+  const version = Number(major) + Number(minor ?? 0) / 10
+  return from !== undefined && version >= from ? WINDOW_SIZE_1M : WINDOW_SIZE_200k
+}
 
 // `percent` is null while there is nothing to measure yet.
 type Cell = { key: string; label: string; percent: number | null; extra: string }
@@ -68,6 +88,17 @@ function barColor(percent: number) {
 
 const inputTokens = (u: ModelUsage) =>
   u.input_tokens + u.cache_read_input_tokens + u.cache_creation_input_tokens
+
+function agentWindow(
+  model: string | undefined,
+  tokens: number,
+  main: Context | null,
+  mainModel: string | null,
+): number {
+  const window =
+    main && model !== undefined && model === mainModel ? main.window : modelWindow(model)
+  return tokens > window ? WINDOW_SIZE_1M : window
+}
 
 function contextCell(tokens: number | undefined, window: number, percent?: number): Cell {
   if (tokens === undefined) {
@@ -244,9 +275,11 @@ export const register: Register = (on, options) => {
       if (main) ctx = contextCell(main.tokens, main.window, main.percent)
     } else {
       const agent = (await read($, agentContexts))[agentId]
-      const sameModel = agent !== undefined && agent.model === (await read($, mainModel))
-      const window = main && sameModel ? main.window : DEFAULT_WINDOW
-      ctx = contextCell(agent?.tokens ?? 0, window)
+      const tokens = agent?.tokens ?? 0
+      ctx = contextCell(
+        tokens,
+        agentWindow(agent?.model, tokens, main, await read($, mainModel)),
+      )
     }
     const left = ctx && showContext ? [ctx] : []
     const all = [...left, ...right]

@@ -57,7 +57,7 @@ Set them when you install, or later in `/config`: type `usage-bars` to filter th
 - **When the bars update:** the figures come from the API's responses. The context bars update after every API call, including those within a long turn. The usage limits update when Claude Code reports a change, at the latest when the turn ends. Usage from your other sessions shows up after this session's next response.
 - **New, cleared and resumed sessions:** the usage limits start from the last figures any session saw, until the first reply brings fresh ones. The Context bar is drawn empty, with `–`, until then.
 - **Resets:** once a window's reset time passes, its bar drops to 0% without waiting for the next response.
-- **Subagents:** a subagent's bar shows the input tokens of its latest API call, and 0% until it has made one. Claude Code only reports the window size for the main conversation, so a subagent on the same model is measured against that size and one on any other model against 200k. If the main conversation uses a 1M window and the subagent the standard one, its bar reads low.
+- **Subagents:** a subagent's bar shows the input tokens of its latest API call, and 0% until it has made one. Claude Code only reports the window size for the main conversation, so a subagent on the same model is measured against that size, and one on another model against the window that model has in Anthropic's documentation (1M for the current models, 200k for the older ones). A subagent that passes 200k is measured against 1M.
 - **Viewed transcript:** the mod learns which transcript you're viewing from the band above the prompt. If another plugin draws that band without passing it on, the Context bar keeps showing the main conversation.
 
 ## Development
