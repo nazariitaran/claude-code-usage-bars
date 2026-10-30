@@ -35,9 +35,9 @@ const BAR = '▇'
 const LABEL_WIDTH = 7
 // "Sun 00:20", "142k/200k"
 const EXTRA_WIDTH = 9
-const PERCENT_WIDTH = 5
+const PERCENT_WIDTH = 4
 const LIMITS_KEY = 'lastLimits'
-const FIXED_WIDTH = LABEL_WIDTH + 1 + PERCENT_WIDTH + 2 + EXTRA_WIDTH
+const FIXED_WIDTH = LABEL_WIDTH + 1 + PERCENT_WIDTH + 1 + EXTRA_WIDTH
 // The engine reports a window size for the main conversation only, so a
 // subagent on another model is measured against what its model id implies.
 const WINDOW_SIZE_200k = 200_000
@@ -294,7 +294,7 @@ export const register: Register = (on, options) => {
     // Every part but the bar is fixed-width so the bar only changes with the
     // column; on a very narrow one the reset/token column goes first.
     const showExtra = cellWidth >= FIXED_WIDTH + MIN_BAR
-    const fixed = showExtra ? FIXED_WIDTH : FIXED_WIDTH - 2 - EXTRA_WIDTH
+    const fixed = showExtra ? FIXED_WIDTH : FIXED_WIDTH - 1 - EXTRA_WIDTH
     const barWidth = Math.max(1, cellWidth - fixed)
 
     const cell = (c: Cell | undefined) => {
@@ -309,9 +309,9 @@ export const register: Register = (on, options) => {
           {c.percent === null ? (
             <Text dimColor>{'–'.padStart(PERCENT_WIDTH)}</Text>
           ) : (
-            <Text>{` ${String(c.percent).padStart(3)}%`}</Text>
+            <Text>{`${c.percent}%`.padStart(PERCENT_WIDTH)}</Text>
           )}
-          {showExtra ? <Text dimColor>{`  ${c.extra.padEnd(EXTRA_WIDTH)}`}</Text> : null}
+          {showExtra ? <Text dimColor>{` ${c.extra.padEnd(EXTRA_WIDTH)}`}</Text> : null}
         </Box>
       )
     }

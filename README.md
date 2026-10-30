@@ -13,7 +13,7 @@ While you view a subagent's transcript, the Context bar shows that subagent's co
 - **Weekly:** the 7-day usage window, with its reset day and time.
 - The bars fill green, turn yellow at 70% and red at 90%, and use your theme's colours in light and dark mode.
 - The bars stretch with the width of the prompt's column, including when a pane is docked beside the transcript. Every other part has a fixed width, so the bars stay aligned.
-- On a narrow terminal (under about 71 columns) the bars stack in a single column, and below about 36 the reset and token figures are dropped.
+- On a narrow terminal (under about 67 columns) the bars stack in a single column, and below about 34 the reset and token figures are dropped.
 - The layout and which bars show can be changed: see [Options](#options).
 
 ## Install
@@ -47,7 +47,7 @@ Set them when you install, or later in `/config`: type `usage-bars` to filter th
 | Show Session bar | `true` / `false` | `true` |
 | Show Weekly bar | `true` / `false` | `true` |
 
-- The layout sets the most columns. A terminal too narrow for them gets fewer: three columns need about 106, two need about 71.
+- The layout sets the most columns. A terminal too narrow for them gets fewer: three columns need about 100, two need about 67.
 - Hidden bars leave no gap. With Context hidden, two columns put Session and Weekly side by side, and three columns with one bar hidden draw two.
 - A gateway's Spend bar has no toggle. It follows the limits, on the next row in three columns.
 

@@ -296,7 +296,7 @@ test('three columns wrap a fourth bar onto the next row', { options: { layout: '
 
 test('three columns fall back to two where three do not fit', { options: { layout: 'three-columns' } }, async ($, on) => {
   engine(on, seed())
-  expect(await grid($, 100)).toEqual([
+  expect(await grid($, 99)).toEqual([
     ['Context', 'Session'],
     ['', 'Weekly'],
   ])
