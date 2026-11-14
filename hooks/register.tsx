@@ -1,7 +1,7 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, ModelUsage, Register, Timer } from 'claude-code'
 
-import type { AgentContext, Band, Context, Limit } from '../types'
+import type { AgentContext, Band, Context, Limit, Pace } from '../types'
 
 const limits = atom({ plugin: 'usage-bars', key: 'limits' } as const, [] as Limit[])
 const context = atom({ plugin: 'usage-bars', key: 'context' } as const, null as Context | null)
@@ -11,6 +11,7 @@ const agentContexts = atom(
 )
 const mainModel = atom({ plugin: 'usage-bars', key: 'mainModel' } as const, null as string | null)
 const band = atom({ plugin: 'usage-bars', key: 'band' } as const, null as Band | null)
+const pace = atom({ plugin: 'usage-bars', key: 'pace' } as const, null as Pace | null)
 
 const LABELS: Record<string, string> = {
   five_hour: 'Session',
@@ -37,6 +38,10 @@ const LABEL_WIDTH = 7
 const EXTRA_WIDTH = 9
 const PERCENT_WIDTH = 4
 const LIMITS_KEY = 'lastLimits'
+const PACE_KEY = 'weeklyPace'
+const PACE_COLOR = 'subtle'
+const DAY = 24 * 3_600_000
+const WEEK = 7 * DAY
 const FIXED_WIDTH = LABEL_WIDTH + 1 + PERCENT_WIDTH + 1 + EXTRA_WIDTH
 // The engine reports a window size for the main conversation only, so a
 // subagent on another model is measured against what its model id implies.
@@ -62,8 +67,9 @@ function modelWindow(model: string | undefined): number {
   return from !== undefined && version >= from ? WINDOW_SIZE_1M : WINDOW_SIZE_200k
 }
 
-// `percent` is null while there is nothing to measure yet.
-type Cell = { key: string; label: string; percent: number | null; extra: string }
+// `percent` is null while there is nothing to measure yet; `pace` is how far
+// the bar may fill today.
+type Cell = { key: string; label: string; percent: number | null; extra: string; pace?: number }
 
 const pad2 = (n: number) => String(n).padStart(2, '0')
 
@@ -136,6 +142,63 @@ function scheduleReset($: EngineInterface, list: Limit[], now: number) {
   })
 }
 
+// The week is cut into seven 24-hour days starting at the window's start.
+function dayOf(weekly: Limit, now: number): number | undefined {
+  if (!weekly.resetsAt) return undefined
+  const resetsAt = Date.parse(weekly.resetsAt)
+  if (!(resetsAt > now)) return undefined
+  return Math.max(0, Math.floor((now - (resetsAt - WEEK)) / DAY))
+}
+
+// A reset time can move a little between readings; a new window's is a week on.
+const sameWindow = (a: string, b: string) => Math.abs(Date.parse(a) - Date.parse(b)) < DAY
+
+const paceMark = (p: Pace) => p.usedAtStart + (100 - p.usedAtStart) / (7 - p.day)
+
+function isPace(v: unknown): v is Pace {
+  const p = v as Pace | null | undefined
+  return typeof p?.resetsAt === 'string' && typeof p.day === 'number' && typeof p.usedAtStart === 'number'
+}
+
+let paceEnabled = false
+let paceStarted = false
+let paceTimer: Timer | undefined
+
+// Today's snapshot lives in the store so every session, and the next one,
+// measures from the same start of day.
+async function trackPace($: EngineInterface, list: Limit[], now: number) {
+  paceTimer?.cancel()
+  paceTimer = undefined
+  const weekly = list.find(l => l.kind === 'seven_day')
+  const day = weekly && dayOf(weekly, now)
+  if (!weekly?.resetsAt || day === undefined) {
+    await update($, pace, () => null)
+    return
+  }
+  const resetsAt = weekly.resetsAt
+  const saved = await $.store.get(PACE_KEY)
+  let today: Pace
+  if (isPace(saved) && saved.day === day && sameWindow(saved.resetsAt, resetsAt)) {
+    today = saved
+  } else {
+    // Called before the new reading is saved, so the last one saved is the
+    // closest we have to where the day started: any reading after the day
+    // began would already have taken today's snapshot.
+    const previous = (await lastKnownLimits($)).find(l => l.kind === 'seven_day')
+    const usedAtStart =
+      previous?.resetsAt && sameWindow(previous.resetsAt, resetsAt)
+        ? previous.percentUsed
+        : weekly.percentUsed
+    today = { resetsAt, day, usedAtStart }
+    await $.store.set(PACE_KEY, today)
+  }
+  await update($, pace, () => today)
+  const nextDay = Date.parse(resetsAt) - WEEK + (day + 1) * DAY
+  paceTimer = $.clock.after(nextDay - now + 1000, async () => {
+    await trackPace($, await read($, limits), await $.clock.now())
+  })
+}
+
 // An empty reading means the engine has none yet, not that the limits went
 // away, so the last figures stay up.
 async function storeLimits($: EngineInterface, next: Limit[]) {
@@ -144,6 +207,7 @@ async function storeLimits($: EngineInterface, next: Limit[]) {
   const stored = zeroPassed(next, now)
   await update($, limits, () => stored)
   scheduleReset($, stored, now)
+  if (paceEnabled) await trackPace($, stored, now)
 }
 
 // Limits are the account's, not the conversation's, so the last reading is
@@ -175,6 +239,13 @@ export const register: Register = (on, options) => {
     ...(options.showSession === false ? ['five_hour'] : []),
     ...(options.showWeekly === false ? ['seven_day'] : []),
   ])
+  // Installs from before the option have it unset, which counts as off.
+  paceEnabled = options.showWeeklyPace === true
+  paceStarted = false
+  if (!paceEnabled) {
+    paceTimer?.cancel()
+    paceTimer = undefined
+  }
 
   on('session.start', async ($, e, next) => {
     const result = await next(e)
@@ -248,7 +319,20 @@ export const register: Register = (on, options) => {
     if (columns === undefined) return line
     const now = await $.clock.now()
 
-    const right: Cell[] = [...(await read($, limits))]
+    const shown = await read($, limits)
+    const today = paceEnabled ? await read($, pace) : null
+    // Switched on in /config mid-session: the next reading may be a turn away.
+    if (paceEnabled && today === null && !paceStarted && shown.length > 0) {
+      paceStarted = true
+      $.clock.after(0, () => void trackPace($, shown, now))
+    }
+    const paceOf = (l: Limit) =>
+      today && l.kind === 'seven_day' && l.resetsAt && sameWindow(today.resetsAt, l.resetsAt) &&
+      dayOf(l, now) === today.day
+        ? paceMark(today)
+        : undefined
+
+    const right: Cell[] = [...shown]
       .filter(l => !hidden.has(l.kind))
       .sort((a, b) => rank(a.kind) - rank(b.kind))
       .map(l => ({
@@ -256,6 +340,7 @@ export const register: Register = (on, options) => {
         label: LABELS[l.kind] ?? l.kind,
         percent: Math.round(l.percentUsed),
         extra: formatReset(l.resetsAt, now),
+        pace: paceOf(l),
       }))
 
     const main = await read($, context)
@@ -300,12 +385,19 @@ export const register: Register = (on, options) => {
     const cell = (c: Cell | undefined) => {
       if (!c) return null
       const percent = c.percent ?? 0
-      const filled = Math.round((Math.min(percent, 100) / 100) * barWidth)
+      const cellsAt = (p: number) => Math.round((Math.min(p, 100) / 100) * barWidth)
+      const filled = cellsAt(percent)
+      // A budget left for today keeps at least one cell, however narrow the bar.
+      const budgetEnd =
+        c.pace !== undefined && c.pace > percent
+          ? Math.min(barWidth, Math.max(filled + 1, cellsAt(c.pace)))
+          : filled
       return (
         <Box key={c.key}>
           <Text dimColor>{c.label.padEnd(LABEL_WIDTH)} </Text>
           <Text color={barColor(percent)}>{BAR.repeat(filled)}</Text>
-          <Text dimColor>{BAR.repeat(barWidth - filled)}</Text>
+          {budgetEnd > filled ? <Text color={PACE_COLOR}>{BAR.repeat(budgetEnd - filled)}</Text> : null}
+          <Text dimColor>{BAR.repeat(barWidth - budgetEnd)}</Text>
           {c.percent === null ? (
             <Text dimColor>{'–'.padStart(PERCENT_WIDTH)}</Text>
           ) : (

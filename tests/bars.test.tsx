@@ -377,3 +377,129 @@ for (const layout of ['one-column', 'three-columns']) {
     })
   }
 }
+
+const DAY = 24 * HOUR
+// A window that started 2026-11-12 00:00Z; noon on its second day is day 1.
+const RESETS_AT = '2026-11-19T00:00:00.000Z'
+const DAY_1_NOON = Date.parse('2026-11-13T12:00:00.000Z')
+// 200 columns, two columns: (196 - 3) / 2 = 96 per cell, less 22 fixed.
+const BAR_WIDTH = 74
+
+// Each run of the Weekly bar: [colour, length], the dim track as 'dim'.
+function weeklyRuns(drawn: any): [string, number][] {
+  const find = (node: any): any =>
+    !node || typeof node !== 'object'
+      ? undefined
+      : firstText(node).trim() === 'Weekly' && (node.children ?? []).length > 3
+        ? node
+        : (node.children ?? []).map(find).find(Boolean)
+  const cell = find(drawn)
+  return (cell.children as any[])
+    .slice(1)
+    .filter(t => /^▇+$/.test(firstText(t)))
+    .map(t => [t.props?.dimColor ? 'dim' : t.props?.color, [...firstText(t)].length])
+}
+
+function paceSession(on: any, weekly: number, saved: Record<string, unknown>) {
+  const reading = [{ kind: 'seven_day', percentUsed: weekly, resetsAt: RESETS_AT }]
+  const state = seed({ limits: [] })
+  engine(on, state, { stubClock: false })
+  const clock = mock.clock(on, { now: DAY_1_NOON })
+  startWith(on, reading, saved)
+  return { state, clock }
+}
+
+const start = ($: any) => $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+
+test('weekly pace is off unless switched on', async ($, on) => {
+  paceSession(on, 5, { weeklyPace: { resetsAt: RESETS_AT, day: 1, usedAtStart: 5 } })
+  await start($)
+  const { drawn } = await texts($)
+  expect(weeklyRuns(drawn).map(r => r[0])).toEqual(['success', 'dim'])
+})
+
+test(
+  'weekly pace splits what was left at the start of the day over the days left',
+  { options: { showWeeklyPace: true } },
+  async ($, on) => {
+    const saved: Record<string, unknown> = {
+      lastLimits: [{ kind: 'seven_day', percentUsed: 5, resetsAt: RESETS_AT }],
+    }
+    paceSession(on, 8, saved)
+    await start($)
+    expect(saved.weeklyPace).toEqual({ resetsAt: RESETS_AT, day: 1, usedAtStart: 5 })
+    // 8% used, budget to 5 + 95 / 6 = 20.8%.
+    const used = Math.round(0.08 * BAR_WIDTH)
+    const budget = Math.round((20.8333 / 100) * BAR_WIDTH)
+    const { drawn } = await texts($)
+    expect(weeklyRuns(drawn)).toEqual([
+      ['success', used],
+      ['subtle', budget - used],
+      ['dim', BAR_WIDTH - budget],
+    ])
+  },
+)
+
+test('a snapshot taken earlier today is kept', { options: { showWeeklyPace: true } }, async ($, on) => {
+  const snapshot = { resetsAt: RESETS_AT, day: 1, usedAtStart: 2 }
+  const saved: Record<string, unknown> = {
+    weeklyPace: snapshot,
+    lastLimits: [{ kind: 'seven_day', percentUsed: 9, resetsAt: RESETS_AT }],
+  }
+  paceSession(on, 10, saved)
+  await start($)
+  expect(saved.weeklyPace).toEqual(snapshot)
+})
+
+test('the next day recalculates from where the day ended', { options: { showWeeklyPace: true } }, async ($, on) => {
+  const saved: Record<string, unknown> = {
+    lastLimits: [{ kind: 'seven_day', percentUsed: 5, resetsAt: RESETS_AT }],
+  }
+  const { state, clock } = paceSession(on, 5, saved)
+  await start($)
+  const reading = [{ kind: 'seven_day', percentUsed: 30, resetsAt: RESETS_AT }]
+  state.limits = reading
+  saved.lastLimits = reading
+  await clock.advance(DAY)
+  expect(saved.weeklyPace).toEqual({ resetsAt: RESETS_AT, day: 2, usedAtStart: 30 })
+})
+
+test('a snapshot from the last window is not reused', { options: { showWeeklyPace: true } }, async ($, on) => {
+  const old = '2026-11-12T00:00:00.000Z'
+  const saved: Record<string, unknown> = {
+    weeklyPace: { resetsAt: old, day: 1, usedAtStart: 60 },
+    lastLimits: [{ kind: 'seven_day', percentUsed: 90, resetsAt: old }],
+  }
+  paceSession(on, 4, saved)
+  await start($)
+  expect(saved.weeklyPace).toEqual({ resetsAt: RESETS_AT, day: 1, usedAtStart: 4 })
+})
+
+test('over today’s budget the bar shows no budget left', { options: { showWeeklyPace: true } }, async ($, on) => {
+  paceSession(on, 40, { weeklyPace: { resetsAt: RESETS_AT, day: 1, usedAtStart: 5 } })
+  await start($)
+  const { drawn } = await texts($)
+  expect(weeklyRuns(drawn).map(r => r[0])).toEqual(['success', 'dim'])
+})
+
+test('a budget too thin to round to a cell still gets one', { options: { showWeeklyPace: true } }, async ($, on) => {
+  // 16% used, budget to 0 + 100 / 6 = 16.7%: both round to cell 12 of 74.
+  paceSession(on, 16, { weeklyPace: { resetsAt: RESETS_AT, day: 1, usedAtStart: 0 } })
+  await start($)
+  const { drawn } = await texts($)
+  expect(weeklyRuns(drawn)).toEqual([
+    ['success', 12],
+    ['subtle', 1],
+    ['dim', BAR_WIDTH - 13],
+  ])
+})
+
+test('switched on mid-session, the mark shows without a new reading', { options: { showWeeklyPace: true } }, async ($, on) => {
+  const state = seed({ limits: [{ kind: 'seven_day', percentUsed: 5, resetsAt: RESETS_AT }] })
+  engine(on, state, { stubClock: false })
+  const clock = mock.clock(on, { now: DAY_1_NOON })
+  mock.store(on, {})
+  await texts($)
+  await clock.settle()
+  expect(state.pace).toEqual({ resetsAt: RESETS_AT, day: 1, usedAtStart: 5 })
+})

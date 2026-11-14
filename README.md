@@ -46,9 +46,11 @@ Set them when you install, or later in `/config`: type `usage-bars` to filter th
 | Show Context bar | `true` / `false` | `true` |
 | Show Session bar | `true` / `false` | `true` |
 | Show Weekly bar | `true` / `false` | `true` |
+| Show weekly pace | `true` / `false` | `false` |
 
 - The layout sets the most columns. A terminal too narrow for them gets fewer: three columns need about 100, two need about 67.
 - Hidden bars leave no gap. With Context hidden, two columns put Session and Weekly side by side, and three columns with one bar hidden draw two.
+- Weekly pace adds a grey stretch to the Weekly bar: how far it can fill today if what was left at the start of the day is spread evenly over the days left. Use 5% on the first day and the second day's budget is 95% / 6. Going past it changes nothing but the picture.
 - A gateway's Spend bar has no toggle. It follows the limits, on the next row in three columns.
 
 ## Notes
@@ -56,6 +58,7 @@ Set them when you install, or later in `/config`: type `usage-bars` to filter th
 - **Subscription only:** the usage limits come with a Pro or Max subscription. With an API key, only the context bar is shown.
 - **When the bars update:** the figures come from the API's responses. The context bars update after every API call, including those within a long turn. The usage limits update when Claude Code reports a change, at the latest when the turn ends. Usage from your other sessions shows up after this session's next response.
 - **New, cleared and resumed sessions:** the usage limits start from the last figures any session saw, until the first reply brings fresh ones. The Context bar is drawn empty, with `–`, until then.
+- **Pace days:** the weekly window is cut into seven 24-hour days, starting at its reset time. A day's starting point is the last figure seen before it began, so usage from elsewhere (claude.ai, another device) before your first Claude Code reply of the day counts towards the day before.
 - **Resets:** once a window's reset time passes, its bar drops to 0% without waiting for the next response.
 - **Subagents:** a subagent's bar shows the input tokens of its latest API call, and 0% until it has made one. Claude Code only reports the window size for the main conversation, so a subagent on the same model is measured against that size, and one on another model against the window that model has in Anthropic's documentation (1M for the current models, 200k for the older ones). A subagent that passes 200k is measured against 1M.
 - **Viewed transcript:** the mod learns which transcript you're viewing from the band above the prompt. If another plugin draws that band without passing it on, the Context bar keeps showing the main conversation.

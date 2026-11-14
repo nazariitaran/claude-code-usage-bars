@@ -31,6 +31,12 @@
       "title": "Show Weekly bar",
       "description": "Show the 7-day usage window",
       "default": true
+    },
+    "showWeeklyPace": {
+      "type": "boolean",
+      "title": "Show weekly pace",
+      "description": "Mark how far the Weekly bar can fill today to spread what is left evenly over the days left",
+      "default": false
     }
   }
 }
