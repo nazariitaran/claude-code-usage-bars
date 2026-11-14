@@ -51,6 +51,9 @@ Set them when you install, or later in `/config`: type `usage-bars` to filter th
 - The layout sets the most columns. A terminal too narrow for them gets fewer: three columns need about 100, two need about 67.
 - Hidden bars leave no gap. With Context hidden, two columns put Session and Weekly side by side, and three columns with one bar hidden draw two.
 - Weekly pace adds a grey stretch to the Weekly bar: how far it can fill today if what was left at the start of the day is spread evenly over the days left. Use 5% on the first day and the second day's budget is 95% / 6. Going past it changes nothing but the picture.
+
+  ![The Weekly bar with today's pace in grey](docs/weekly-pace-view.png)
+
 - A gateway's Spend bar has no toggle. It follows the limits, on the next row in three columns.
 
 ## Notes
