@@ -46,7 +46,7 @@ Set them when you install, or later in `/config`: type `usage-bars` to filter th
 | Show Context bar | `true` / `false` | `true` |
 | Show Session bar | `true` / `false` | `true` |
 | Show Weekly bar | `true` / `false` | `true` |
-| Show weekly pace | `true` / `false` | `false` |
+| Show Weekly pace | `true` / `false` | `false` |
 
 - The layout sets the most columns. A terminal too narrow for them gets fewer: three columns need about 100, two need about 67.
 - Hidden bars leave no gap. With Context hidden, two columns put Session and Weekly side by side, and three columns with one bar hidden draw two.

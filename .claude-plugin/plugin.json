@@ -34,7 +34,7 @@
     },
     "showWeeklyPace": {
       "type": "boolean",
-      "title": "Show weekly pace",
+      "title": "Show Weekly pace",
       "description": "Mark how far the Weekly bar can fill today to spread what is left evenly over the days left",
       "default": false
     }
